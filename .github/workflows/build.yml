@@ -1,0 +1,70 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install xcodegen
+
+      - name: Icon
+        run: |
+          mkdir -p Resources
+          swift Scripts/make-icon.swift Resources/AppIcon.iconset
+          iconutil -c icns Resources/AppIcon.iconset -o Resources/AppIcon.icns
+          rm -rf Resources/AppIcon.iconset
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Test and render screenshots
+        run: |
+          mkdir -p "$RUNNER_TEMP/shots"
+          SCREENSHOT_DIR="$RUNNER_TEMP/shots" xcodebuild test -project Unbox.xcodeproj -scheme Unbox \
+            -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES 2>&1 | tail -n 60
+          mkdir -p shots && cp "$RUNNER_TEMP"/shots/*.png shots/ || true
+
+      - name: Build release app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then VERSION="0.0.0-dev"; fi
+          MARKETING="${VERSION%%-*}"
+          xcodebuild build -project Unbox.xcodeproj -scheme Unbox -configuration Release \
+            -derivedDataPath build MARKETING_VERSION="$MARKETING" CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES
+          codesign --force --deep --sign - build/Build/Products/Release/Unbox.app
+          codesign --verify --deep --strict build/Build/Products/Release/Unbox.app
+
+      - name: Disk image
+        run: |
+          mkdir -p dmgroot
+          cp -R build/Build/Products/Release/Unbox.app dmgroot/
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -srcfolder dmgroot -format UDZO -volname Unbox Unbox.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unbox
+          path: |
+            Unbox.dmg
+            shots/*.png
+          retention-days: 1
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FLAGS=""
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then FLAGS="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" Unbox.dmg --title "$GITHUB_REF_NAME" --generate-notes $FLAGS
