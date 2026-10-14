@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
@@ -31,10 +35,10 @@ jobs:
       - name: Test and render screenshots
         run: |
           mkdir -p "$RUNNER_TEMP/shots"
-          SCREENSHOT_DIR="$RUNNER_TEMP/shots" xcodebuild test -project Unbox.xcodeproj -scheme Unbox \
+          TEST_RUNNER_SCREENSHOT_DIR="$RUNNER_TEMP/shots" xcodebuild test -project Unbox.xcodeproj -scheme Unbox \
             -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES 2>&1 | tee test.log | tail -n 80
           status=${PIPESTATUS[0]}
-          mkdir -p shots && cp "$RUNNER_TEMP"/shots/*.png shots/ || true
+          mkdir -p shots && cp "$RUNNER_TEMP"/shots/*.png /tmp/unbox-shots/*.png shots/ 2>/dev/null || true
           exit $status
 
       - name: Build release app
@@ -53,6 +57,25 @@ jobs:
           cp -R build/Build/Products/Release/Unbox.app dmgroot/
           ln -s /Applications dmgroot/Applications
           hdiutil create -srcfolder dmgroot -format UDZO -volname Unbox Unbox.dmg
+
+      - name: Window routing and placement on a real screen
+        continue-on-error: true
+        run: |
+          APP="$PWD/build/Build/Products/Release/Unbox.app"
+          W="$RUNNER_TEMP/route"; rm -rf "$W"; mkdir -p "$W/src/Sample.app/Contents/MacOS"
+          printf '#!/bin/sh\nexit 0\n' > "$W/src/Sample.app/Contents/MacOS/Sample"; chmod +x "$W/src/Sample.app/Contents/MacOS/Sample"
+          cat > "$W/src/Sample.app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>de.malte.unbox.sample</string><key>CFBundleName</key><string>Sample</string><key>CFBundleExecutable</key><string>Sample</string><key>CFBundleShortVersionString</key><string>1.0</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>
+          PLIST
+          hdiutil create -srcfolder "$W/src" -format UDZO -volname Sample "$W/Sample.dmg" >/dev/null
+          open -a "$APP" "$W/Sample.dmg"
+          sleep 6
+          swift Scripts/list-windows.swift Unbox | tee "$W/windows.txt"
+          mkdir -p shots; screencapture -x shots/real-screen.png || true
+          pkill -x Unbox || true
+          for m in /tmp/unbox-*/*; do hdiutil detach -force "$m" >/dev/null 2>&1 || true; done
+          grep -q '^COUNT 1$' "$W/windows.txt"
 
       - name: Publish screenshots to a review branch
         if: always() && github.ref_type == 'branch'
