@@ -51,8 +51,11 @@ struct InstallView: View {
     var session: InstallSession
 
     /// Window content size; the details scroll when they do not fit the screen.
+    nonisolated(unsafe) static var testHeight: CGFloat?
+
     static func contentSize(for session: InstallSession) -> NSSize {
         if session.prepared == nil { return NSSize(width: 440, height: 280) }
+        if let h = testHeight { return NSSize(width: 440, height: h) }
         return NSSize(width: 440, height: min(560, WindowPlacement.maxContentHeight()))
     }
 
