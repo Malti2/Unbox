@@ -65,8 +65,15 @@ final class EngineTests: XCTestCase {
         XCTAssertEqual(p.bundleID, "de.malte.unbox.sample")
         XCTAssertTrue(p.signed)
         XCTAssertFalse(p.isReplacement)
-        let out = eng.commit(p)
+        var stages: [InstallStage] = []
+        let out = eng.commit(p) { stages.append($0) }
         XCTAssertEqual(out.kind, .installed, out.detail)
+        XCTAssertEqual(stages.first, .copying(0))
+        XCTAssertTrue(stages.contains(.copying(1)))
+        XCTAssertTrue(stages.contains(.verifying))
+        XCTAssertEqual(stages.last, .trashing)
+        var lastFraction = 0.0
+        for case .copying(let f) in stages { XCTAssertGreaterThanOrEqual(f, lastFraction); lastFraction = f }
         XCTAssertTrue(FileManager.default.fileExists(atPath: apps.appendingPathComponent("Sample.app/Contents/Info.plist").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: dmg.path), "image should be in the trash")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: trashDir.path).count, 1)
@@ -103,6 +110,27 @@ final class EngineTests: XCTestCase {
         let plist2 = NSDictionary(contentsOf: apps.appendingPathComponent("Sample.app/Contents/Info.plist"))
         XCTAssertEqual(plist2?["CFBundleShortVersionString"] as? String, "2.0")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: trashDir.path).count, 3) // old image, old app, new image
+    }
+
+    func testSameVersionIsDetected() throws {
+        let eng = engine()
+        XCTAssertEqual(eng.commit(try ready(eng.prepare(dmg: try makeDMG(version: "1.0")))).kind, .installed)
+        let again = try ready(eng.prepare(dmg: try makeDMG(version: "1.0")))
+        XCTAssertTrue(again.isSameApp)
+        XCTAssertTrue(again.isSameVersionInstalled)
+        _ = eng.cancel(again)
+        let newer = try ready(eng.prepare(dmg: try makeDMG(version: "1.1")))
+        XCTAssertFalse(newer.isSameVersionInstalled)
+        _ = eng.cancel(newer)
+        let older = try ready(eng.prepare(dmg: try makeDMG(version: "0.9")))
+        XCTAssertTrue(older.isOlderThanInstalled)
+        _ = eng.cancel(older)
+    }
+
+    func testWindowFrameIsCentered() {
+        let f = WindowPlacement.frame(size: NSSize(width: 400, height: 300), on: nil)
+        XCTAssertEqual(f.midX, 720, accuracy: 1)
+        XCTAssertEqual(f.midY, 450, accuracy: 1)
     }
 
     func testImageWithoutAppIsHandedToSystem() throws {
@@ -156,9 +184,25 @@ final class EngineTests: XCTestCase {
         let failed = InstallSession(failure: InstallOutcome(kind: .failed, title: "Sample", detail: "Copying Sample.app failed. You do not have permission to write to /Applications. The image was kept.", dmg: p.dmg))
         try render(InstallView(session: failed), name: "install-failed", to: outDir)
 
+        var update = p
+        update.existingVersion = .some("0.9"); update.existingBundleID = p.bundleID; update.existingBuild = "1"
+        try render(InstallView(session: InstallSession(prepared: update)), name: "install-update", to: outDir)
+
+        var same = p
+        same.existingVersion = .some(p.version); same.existingBundleID = p.bundleID; same.existingBuild = p.build
+        try render(InstallView(session: InstallSession(prepared: same)), name: "install-reinstall", to: outDir)
+
+        var other = p
+        other.existingVersion = .some("3.2"); other.existingBundleID = "com.example.other"; other.existingBuild = "9"
+        try render(InstallView(session: InstallSession(prepared: other)), name: "install-different-app", to: outDir)
+
+        let progress = InstallSession(prepared: p)
+        progress.phase = .working(.copying(0.42))
+        try render(InstallView(session: progress), name: "install-progress", to: outDir)
+
         let model = AppModel.shared
         model.history = [HistoryItem(date: Date().addingTimeInterval(-300), title: "Sample", detail: "Sample 1.0 is in /Applications.", success: true)]
-        try render(MainView(model: model), name: "main", to: outDir)
+        try render(MainView(model: model).frame(width: 460, height: 520), name: "main", to: outDir)
     }
 
     @MainActor
