@@ -83,7 +83,6 @@ struct InstallView: View {
                         LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: p.sizeBytes, countStyle: .file))
                         if let min = p.minimumSystem { LabeledContent("Requires", value: "macOS \(min) or later") }
                         LabeledContent("Signature", value: p.signed ? "Signed" : "Unsigned")
-                        LabeledContent("Install to", value: p.destination.deletingLastPathComponent().path)
                     }
                     .formStyle(.grouped)
                     .scrollDisabled(true)
@@ -106,7 +105,7 @@ struct InstallView: View {
     }
 
     private func detailRows(_ p: PreparedInstall) -> Int {
-        4 + (p.build == nil ? 0 : 1) + (p.minimumSystem == nil ? 0 : 1)
+        3 + (p.build == nil ? 0 : 1) + (p.minimumSystem == nil ? 0 : 1)
     }
 
     private func actionTitle(_ p: PreparedInstall) -> String {
