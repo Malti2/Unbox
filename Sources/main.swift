@@ -18,17 +18,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             InstallController.shared.onIdle = { [weak self] in self?.idle() }
-            if !launchedForFiles { showMain() }
+            guard !launchedForFiles else { return }
+            // Launch events can arrive just after this callback. Only open the main window when no image came in.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, !self.receivedFiles else { return }
+                MainActor.assumeIsolated { self.showMain() }
+            }
         }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         receivedFiles = true
+        if mainWindow == nil { launchedForFiles = true; NSApp.setActivationPolicy(.accessory) }
         MainActor.assumeIsolated { InstallController.shared.handle(urls) }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { MainActor.assumeIsolated { showMain() } }
+        // Reopen events must not pop the main window while an image is being handled.
+        if !flag && !receivedFiles && !launchedForFiles { MainActor.assumeIsolated { showMain() } }
         return true
     }
 
@@ -47,11 +54,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor private func showMain() {
         if let w = mainWindow { w.makeKeyAndOrderFront(nil); return }
         let host = NSHostingController(rootView: MainView(model: AppModel.shared))
-        let w = NSWindow(contentViewController: host)
-        w.styleMask = [.titled, .closable, .miniaturizable]
+        host.sizingOptions = []
+        let size = NSSize(width: 460, height: min(520, WindowPlacement.maxContentHeight()))
+        let w = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable],
+                         backing: .buffered, defer: false)
+        w.contentViewController = host
+        w.setContentSize(size)
         w.title = "Unbox"
         w.isReleasedWhenClosed = false
-        w.center()
+        WindowPlacement.center(w)
         mainWindow = w
         NSApp.activate(ignoringOtherApps: true)
         w.makeKeyAndOrderFront(nil)
