@@ -87,7 +87,7 @@ struct InstallView: View {
                     }
                     .formStyle(.grouped)
                     .scrollDisabled(true)
-                    .frame(height: p.minimumSystem == nil ? 190 : 220)
+                    .frame(height: CGFloat(detailRows(p)) * 37 + 12)
                     notes(p)
                 }
                 .padding(24)
@@ -103,6 +103,10 @@ struct InstallView: View {
             }
             .padding(16)
         }
+    }
+
+    private func detailRows(_ p: PreparedInstall) -> Int {
+        4 + (p.build == nil ? 0 : 1) + (p.minimumSystem == nil ? 0 : 1)
     }
 
     private func actionTitle(_ p: PreparedInstall) -> String {
