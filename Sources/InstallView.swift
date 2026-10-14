@@ -87,7 +87,7 @@ struct InstallView: View {
                     }
                     .formStyle(.grouped)
                     .scrollDisabled(true)
-                    .frame(height: CGFloat(detailRows(p)) * 37 + 12)
+                    .frame(height: CGFloat(detailRows(p)) * 37 + 44)
                     notes(p)
                 }
                 .padding(24)
