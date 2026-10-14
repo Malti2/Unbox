@@ -80,20 +80,7 @@ struct InstallView: View {
                         Text(p.displayName).font(.title2.bold())
                         Text(p.version.map { "Version \($0)" } ?? "Version unknown").foregroundStyle(.secondary)
                     }
-                    Form {
-                        LabeledContent("Identifier", value: p.bundleID)
-                        if let build = p.build { LabeledContent("Build", value: build) }
-                        LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: p.sizeBytes, countStyle: .file))
-                        if let min = p.minimumSystem { LabeledContent("Requires", value: "macOS \(min) or later") }
-                        LabeledContent("Signature", value: p.signed ? "Signed" : "Unsigned")
-                        LabeledContent("Install to") {
-                            Text(p.destination.deletingLastPathComponent().path)
-                                .lineLimit(1).truncationMode(.middle)
-                        }
-                    }
-                    .formStyle(.grouped)
-                    .scrollDisabled(true)
-                    .frame(height: CGFloat(detailRows(p)) * 37 + 44)
+                    detailsCard(p)
                 }
                 .padding(24)
             }
@@ -112,6 +99,33 @@ struct InstallView: View {
             }
             .padding(16)
         }
+    }
+
+    private func detailsCard(_ p: PreparedInstall) -> some View {
+        var rows: [(String, String, Bool)] = [("Identifier", p.bundleID, false)]
+        if let build = p.build { rows.append(("Build", build, false)) }
+        rows.append(("Size", ByteCountFormatter.string(fromByteCount: p.sizeBytes, countStyle: .file), false))
+        if let min = p.minimumSystem { rows.append(("Requires", "macOS \(min) or later", false)) }
+        rows.append(("Signature", p.signed ? "Signed" : "Unsigned", false))
+        rows.append(("Install to", p.destination.deletingLastPathComponent().path, true))
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
+                if i > 0 { Divider() }
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(row.0)
+                    Spacer(minLength: 8)
+                    if row.2 {
+                        Text(row.1).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    } else {
+                        Text(row.1).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 9)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
     }
 
     private func detailRows(_ p: PreparedInstall) -> Int {
