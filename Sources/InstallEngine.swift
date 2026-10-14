@@ -27,16 +27,31 @@ struct PreparedInstall {
     var icon: NSImage
     var existingVersion: String??   // nil = not installed at the destination; .some(nil) = installed, version unknown
     var existingBundleID: String?
+    var existingBuild: String?
     var existingIsRunning: Bool
     var installedElsewhere: URL?    // same bundle identifier, installed under another path
     var destination: URL
     var isReplacement: Bool { existingVersion != nil }
     /// True when the installed app at the destination has the same bundle identifier, so this really is an update.
     var isSameApp: Bool { existingBundleID == bundleID }
+    /// Same app, same version string and build as the installed one.
+    var isSameVersionInstalled: Bool {
+        guard isSameApp, let new = version, let old = existingVersion ?? nil else { return false }
+        return new == old && (existingBuild == nil || existingBuild == build)
+    }
     var isOlderThanInstalled: Bool {
         guard let new = version, let old = existingVersion ?? nil else { return false }
         return new.compare(old, options: .numeric) == .orderedAscending
     }
+}
+
+/// Honest progress: only `copying` carries a fraction (bytes written so far / bytes to write).
+enum InstallStage: Equatable {
+    case copying(Double)
+    case verifying
+    case replacing
+    case ejecting
+    case trashing
 }
 
 enum PrepareResult {
@@ -144,9 +159,11 @@ final class InstallEngine {
         var existing: String?? = nil
         var running = false
         var existingID: String?
+        var existingBuild: String?
         if destExists {
             let old = NSDictionary(contentsOf: dest.appendingPathComponent("Contents/Info.plist"))
             existingID = old?["CFBundleIdentifier"] as? String
+            existingBuild = old?["CFBundleVersion"] as? String
             existing = .some(old?["CFBundleShortVersionString"] as? String)
             running = NSWorkspace.shared.runningApplications.contains { $0.bundleURL?.standardizedFileURL == dest.standardizedFileURL }
         }
@@ -163,7 +180,7 @@ final class InstallEngine {
             version: plist["CFBundleShortVersionString"] as? String, build: plist["CFBundleVersion"] as? String,
             bundleID: bundleID, minimumSystem: plist["LSMinimumSystemVersion"] as? String,
             sizeBytes: Self.size(of: source), signed: signed, icon: icon,
-            existingVersion: existing, existingBundleID: existingID, existingIsRunning: running,
+            existingVersion: existing, existingBundleID: existingID, existingBuild: existingBuild, existingIsRunning: running,
             installedElsewhere: elsewhere, destination: dest))
     }
 
@@ -180,19 +197,20 @@ final class InstallEngine {
     // MARK: Phase 2b: install
 
     /// Copies the app, ejects the image and moves it to the Trash. The Trash step only happens after a verified copy and a successful eject.
-    func commit(_ p: PreparedInstall, progress: (String) -> Void = { _ in }) -> InstallOutcome {
+    func commit(_ p: PreparedInstall, progress: (InstallStage) -> Void = { _ in }) -> InstallOutcome {
         var outcome: InstallOutcome
         do { outcome = try copyApp(p, progress: progress) }
         catch let f as Failure { outcome = InstallOutcome(kind: .failed, title: p.displayName, detail: f.message, dmg: p.dmg) }
         catch { outcome = InstallOutcome(kind: .failed, title: p.displayName, detail: "\(error)", dmg: p.dmg) }
 
-        progress("Ejecting")
+        progress(.ejecting)
         let ejected = detach(p.mountPoint)
         try? FileManager.default.removeItem(at: p.mountRoot)
         if outcome.kind == .installed {
             if !ejected {
                 outcome.detail += " The image could not be ejected because it is in use, so it was left in place."
             } else {
+                progress(.trashing)
                 do {
                     if deleteImageInsteadOfTrashing { try FileManager.default.removeItem(at: p.dmg) } else { try trash(p.dmg) }
                 } catch {
@@ -274,7 +292,7 @@ final class InstallEngine {
         throw Failure(message: "The app's code signature is broken, so it was not installed.")
     }
 
-    private func copyApp(_ p: PreparedInstall, progress: (String) -> Void) throws -> InstallOutcome {
+    private func copyApp(_ p: PreparedInstall, progress: (InstallStage) -> Void) throws -> InstallOutcome {
         let fm = FileManager.default
         let name = p.name
         let dest = p.destination
@@ -286,14 +304,33 @@ final class InstallEngine {
             }
         }
 
-        progress("Copying \(name)")
         let staging = applicationsDir.appendingPathComponent(".unbox-\(UUID().uuidString)-\(name)")
-        let r = Shell.run("/usr/bin/ditto", [p.appURL.path, staging.path])
-        guard r.status == 0 else {
+        progress(.copying(0))
+        let total = max(p.sizeBytes, 1)
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = [p.appURL.path, staging.path]
+        ditto.standardInput = FileHandle.nullDevice
+        ditto.standardOutput = FileHandle.nullDevice
+        ditto.standardError = FileHandle.nullDevice
+        do { try ditto.run() } catch {
+            throw Failure(message: "Copying \(name) failed: \(error.localizedDescription). The image was kept.")
+        }
+        // Real progress: bytes already written to the staging copy divided by the size of the source.
+        var last = 0.0
+        while ditto.isRunning {
+            Thread.sleep(forTimeInterval: 0.1)
+            let done = min(0.99, Double(Self.size(of: staging)) / Double(total))
+            if done > last { last = done; progress(.copying(done)) }
+        }
+        ditto.waitUntilExit()
+        guard ditto.terminationStatus == 0 else {
             try? fm.removeItem(at: staging)
             let hint = !fm.isWritableFile(atPath: applicationsDir.path) ? " You do not have permission to write to \(applicationsDir.path)." : ""
             throw Failure(message: "Copying \(name) failed.\(hint) The image was kept.")
         }
+        progress(.copying(1))
+        progress(.verifying)
         guard bundleID(staging) == p.bundleID else {
             try? fm.removeItem(at: staging)
             throw Failure(message: "The copy of \(name) did not match the original. The image was kept.")
@@ -305,6 +342,7 @@ final class InstallEngine {
         // Gatekeeper: a quarantine flag on the image is carried over to the installed app. It is never removed.
         if let q = Self.readXattr(p.dmg, Self.quarantineKey) { Self.writeXattr(staging, Self.quarantineKey, q) }
 
+        progress(.replacing)
         var trashedExisting = false
         if destExists {
             do { try trash(dest); trashedExisting = true } catch {
