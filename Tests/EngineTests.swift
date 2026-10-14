@@ -196,6 +196,17 @@ final class EngineTests: XCTestCase {
         other.existingVersion = .some("3.2"); other.existingBundleID = "com.example.other"; other.existingBuild = "9"
         try render(InstallView(session: InstallSession(prepared: other)), name: "install-different-app", to: outDir)
 
+        // Constrained height with long metadata: warnings and buttons must stay visible, details must scroll.
+        var longMeta = p
+        longMeta.displayName = "Sample Application With A Very Long Display Name"
+        longMeta.bundleID = "com.example.organization.product.with.a.very.long.bundle.identifier"
+        longMeta.existingVersion = .some("0.9"); longMeta.existingBundleID = "com.example.another.organization.product.long.identifier"; longMeta.existingBuild = "9"
+        InstallView.testHeight = 340
+        defer { InstallView.testHeight = nil }
+        try render(InstallView(session: InstallSession(prepared: longMeta)), name: "install-small-height", to: outDir, scrollToBottom: false)
+        try render(InstallView(session: InstallSession(prepared: longMeta)), name: "install-small-height-scrolled", to: outDir, scrollToBottom: true)
+        InstallView.testHeight = nil
+
         let progress = InstallSession(prepared: p)
         progress.phase = .working(.copying(0.42))
         try render(InstallView(session: progress), name: "install-progress", to: outDir)
@@ -206,7 +217,7 @@ final class EngineTests: XCTestCase {
     }
 
     @MainActor
-    func render<V: View>(_ view: V, name: String, to dir: URL) throws {
+    func render<V: View>(_ view: V, name: String, to dir: URL, scrollToBottom: Bool = false) throws {
         let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark))
         let size = host.fittingSize
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
@@ -216,6 +227,22 @@ final class EngineTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.6))
+        if scrollToBottom {
+            func find(_ v: NSView) -> NSScrollView? {
+                if let s = v as? NSScrollView { return s }
+                for c in v.subviews { if let s = find(c) { return s } }
+                return nil
+            }
+            if let sv = find(host), let doc = sv.documentView {
+                let overflow = doc.frame.height - sv.contentView.bounds.height
+                print("SCROLLTEST doc=\(doc.frame.height) clip=\(sv.contentView.bounds.height) overflow=\(overflow)")
+                XCTAssertGreaterThan(overflow, 0, "details should overflow and scroll at small height")
+                sv.contentView.scroll(to: NSPoint(x: 0, y: doc.isFlipped ? max(0, overflow) : 0))
+                sv.reflectScrolledClipView(sv.contentView)
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+            } else { print("SCROLLTEST no NSScrollView found") }
+        }
         guard let rep = window.contentView?.bitmapImageRepForCachingDisplay(in: host.bounds) else { return XCTFail("no rep") }
         window.contentView?.cacheDisplay(in: host.bounds, to: rep)
         let png = rep.representation(using: .png, properties: [:])!
