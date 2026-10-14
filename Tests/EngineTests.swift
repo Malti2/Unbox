@@ -207,7 +207,7 @@ final class EngineTests: XCTestCase {
 
     @MainActor
     func render<V: View>(_ view: V, name: String, to dir: URL) throws {
-        let host = NSHostingView(rootView: view.preferredColorScheme(.dark))
+        let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)).preferredColorScheme(.dark))
         let size = host.fittingSize
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .darkAqua)
