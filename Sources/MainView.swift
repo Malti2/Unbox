@@ -61,7 +61,7 @@ struct MainView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 520)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
     }
 
     @ViewBuilder private var statusText: some View {
