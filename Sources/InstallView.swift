@@ -83,14 +83,21 @@ struct InstallView: View {
                         LabeledContent("Size", value: ByteCountFormatter.string(fromByteCount: p.sizeBytes, countStyle: .file))
                         if let min = p.minimumSystem { LabeledContent("Requires", value: "macOS \(min) or later") }
                         LabeledContent("Signature", value: p.signed ? "Signed" : "Unsigned")
+                        LabeledContent("Install to") {
+                            Text(p.destination.deletingLastPathComponent().path)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
                     }
                     .formStyle(.grouped)
                     .scrollDisabled(true)
                     .frame(height: CGFloat(detailRows(p)) * 37 + 44)
-                    notes(p)
                 }
                 .padding(24)
             }
+            notes(p)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
             Divider()
             HStack {
                 Button("Cancel", role: .cancel) { session.cancel() }.keyboardShortcut(.cancelAction)
@@ -105,7 +112,7 @@ struct InstallView: View {
     }
 
     private func detailRows(_ p: PreparedInstall) -> Int {
-        3 + (p.build == nil ? 0 : 1) + (p.minimumSystem == nil ? 0 : 1)
+        4 + (p.build == nil ? 0 : 1) + (p.minimumSystem == nil ? 0 : 1)
     }
 
     private func actionTitle(_ p: PreparedInstall) -> String {
