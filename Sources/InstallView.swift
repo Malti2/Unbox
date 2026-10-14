@@ -84,10 +84,10 @@ struct InstallView: View {
                     if p.existingIsRunning {
                         Label("\(p.name) is installed and running. Quit it first.", systemImage: "exclamationmark.triangle")
                     } else if p.isSameApp {
-                        Label("Version \(existing ?? "unknown") is installed. Updating replaces it. The old version goes to the Trash.",
+                        Label("Version \(existing ?? "unknown") is installed. Updating will replace it. The old version goes to the Trash.",
                               systemImage: "exclamationmark.triangle")
                     } else {
-                        Label("A different app with this name is installed (\(p.existingBundleID ?? "unknown identifier")). Replacing it moves that app to the Trash.",
+                        Label("A different app with this name is installed (\(p.existingBundleID ?? "unknown identifier")). Updating will replace it with this one. The existing app goes to the Trash.",
                               systemImage: "exclamationmark.triangle")
                     }
                 }
@@ -103,7 +103,7 @@ struct InstallView: View {
             HStack {
                 Button("Cancel", role: .cancel) { session.cancel() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button(!p.isReplacement ? "Install" : (p.isSameApp ? "Update" : "Replace")) { session.install() }
+                Button(p.isReplacement ? "Update" : "Install") { session.install() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(p.existingIsRunning)
