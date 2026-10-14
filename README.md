@@ -5,7 +5,7 @@ Unbox installs apps from disk images without the usual Finder window. Double-cli
 - **Install** copies the app to `/Applications`, ejects the image and moves it to the Trash.
 - **Cancel** ejects the image and keeps the file.
 - An image without an app, with a license agreement, or with several apps is opened the normal macOS way.
-- An app that is already installed is never overwritten silently. The button changes to **Replace** and the old version goes to the Trash.
+- An app that is already installed is never overwritten silently. The button changes to **Update**, with a warning that the installed app will be replaced. The old version goes to the Trash.
 
 ## Setup
 
