@@ -53,12 +53,15 @@ final class InstallController: NSObject, NSWindowDelegate {
     private func show(_ session: InstallSession) async {
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             let hosting = NSHostingController(rootView: InstallView(session: session))
-            let window = NSWindow(contentViewController: hosting)
-            window.styleMask = [.titled, .closable]
+            hosting.sizingOptions = []
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: InstallView.contentSize(for: session)),
+                                  styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.contentViewController = hosting
+            window.setContentSize(InstallView.contentSize(for: session))
             window.title = session.prepared == nil ? "Unbox" : "Install"
             window.isReleasedWhenClosed = false
             window.delegate = self
-            window.center()
+            WindowPlacement.center(window)
             let key = ObjectIdentifier(window)
             windows[key] = (window, session)
             session.onClose = { [weak self, weak window] in
