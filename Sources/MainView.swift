@@ -33,7 +33,7 @@ struct MainView: View {
                                 Text(item.detail).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(item.date, style: .relative).font(.caption).foregroundStyle(.secondary)
+                            Text(item.date.formatted(.relative(presentation: .named))).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     Button("Clear") { model.clearHistory() }
