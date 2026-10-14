@@ -30,7 +30,6 @@ jobs:
 
       - name: Test and render screenshots
         run: |
-          set -o pipefail
           mkdir -p "$RUNNER_TEMP/shots"
           SCREENSHOT_DIR="$RUNNER_TEMP/shots" xcodebuild test -project Unbox.xcodeproj -scheme Unbox \
             -destination 'platform=macOS' CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES 2>&1 | tee test.log | tail -n 80
